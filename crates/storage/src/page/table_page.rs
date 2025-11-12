@@ -95,9 +95,10 @@ impl<T: Deref<Target = PageFrame>> TablePage<T> {
 
     pub(crate) fn get_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
 todo!();
-        // 1. check that the record is id valid
+        // 1. check that the record id is valid
         // 2. get the slot
-        // 3. get the tuple
+        self.slot_array()
+        // 3. read the tuple  
         // 4. return the tuple 
     }
 
