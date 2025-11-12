@@ -94,7 +94,7 @@ impl<T: Deref<Target = PageFrame>> TablePage<T> {
     }
 
     pub(crate) fn get_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
-        // 1. check that the record id is valid
+        // 1. check that the record id is valid  
         self.validate_record_id(rid)?;
         // 2. get the slot
         let slot = &self.slot_array()[rid.slot_id() as usize];
@@ -107,7 +107,36 @@ impl<T: Deref<Target = PageFrame>> TablePage<T> {
     }
 
     fn get_next_tuple_offset(&mut self, tuple: &Tuple) -> Result<u16> {
-todo!();
+        let tuple_size = tuple.data().len();
+        let tuple_count = self.tuple_count() as usize;
+        
+        // Calculate where the slot array will end after adding this new tuple
+        // (including space for the new TupleInfo that will be added)
+        let slots_end = TABLE_PAGE_HEADER_SIZE + ((tuple_count + 1) * TUPLE_INFO_SIZE);
+        
+        // Find where to place the new tuple (tuples grow backward from end of page)
+        let next_offset = if tuple_count == 0 {
+            // First tuple: place at end of page
+            PAGE_SIZE - tuple_size
+        } else {
+            // Find the lowest offset (where the last tuple starts)
+            // Tuples grow backward, so the most recently inserted tuple has the smallest offset
+            let slots = self.slot_array();
+            let min_offset = slots.iter()
+                .map(|slot| slot.offset() as usize)
+                .min()
+                .unwrap_or(PAGE_SIZE);
+            
+            // Place new tuple right before the existing tuples
+            min_offset - tuple_size
+        };
+        
+        // Check if there's enough space (slots growing forward vs tuples growing backward)
+        if next_offset < slots_end {
+            return Err(Error::OutOfBounds);
+        }
+        
+        Ok(next_offset as u16)
     }
 
     fn validate_record_id(&self, rid: &RecordId) -> Result<()> {
