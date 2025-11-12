@@ -95,6 +95,10 @@ impl<T: Deref<Target = PageFrame>> TablePage<T> {
 
     pub(crate) fn get_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
 todo!();
+        // 1. check that the record is id valid
+        // 2. get the slot
+        // 3. get the tuple
+        // 4. return the tuple 
     }
 
     fn get_next_tuple_offset(&mut self, tuple: &Tuple) -> Result<u16> {
