@@ -181,29 +181,37 @@ impl<T: DerefMut<Target = PageFrame> + Deref<Target = PageFrame>> TablePage<T> {
     }
 
     pub(crate) fn insert_tuple(&mut self, meta: &TupleMetadata, tuple: &Tuple) -> Result<RecordId> {
-        // 1. Get the next tuple offset (this also checks if there's enough space)
-        let offset = self.get_next_tuple_offset(tuple)?;
+        // // 1. get the next tuple offset
+        // let offset = self.get_next_tuple_offset(tuple)?;
+        // // 2. get the slot id
+        // let slot_id = self.tuple_count();
+        // // 3. update the header
+        // self.set_tuple_count(slot_id + 1);
+        // // 4. update the slot
+        // let slot = &mut self.slot_array_mut()[slot_id as usize];
+        // slot.offset = offset;
+        // slot.size_bytes = tuple.size_bytes() as u16;
+        // slot.metadata = *meta;
+        // // 5. write the tuple
+        // let tuple_data = tuple.data();
+        // let tuple_size = tuple_data.len();
+        // self.page_frame_handle.data_mut()[offset as usize..offset as usize + tuple_size]
+        //     .copy_from_slice(tuple_data);
+        // // 6. return the record id
+
+        // 1. calculate the next tuple offset
+        let tuple_size = tuple.data().len();
+        let tuple_count = self.header().tuple_cnt as usize;
+        let offset = self.get_next_tuple_offset(tuple)? as usize;
+        // 2. check that the tuple fits in the page
+        let used_space = TABLE_PAGE_HEADER_SIZE + (tuple_count + 1) * TUPLE_INFO_SIZE;
+        if offset < used_space {
+            return Err(Error::OutOfMemory("Not enough space for tuple".into()));
+        }
+        // 3. write the tuple to the page
+        // 4. 
+
         
-        // 2. Get the current slot id (this will be the new tuple's slot)
-        let slot_id = self.tuple_count();
-        
-        // 3. Update the header to increment tuple count
-        self.set_tuple_count(slot_id + 1);
-        
-        // 4. Update the slot array with the new tuple's info
-        let slot = &mut self.slot_array_mut()[slot_id as usize];
-        slot.offset = offset;
-        slot.size_bytes = tuple.data().len() as u16;
-        slot.metadata = *meta;
-        
-        // 5. Write the tuple data to the page at the calculated offset
-        let tuple_data = tuple.data();
-        let tuple_size = tuple_data.len();
-        self.page_frame_handle.data_mut()[offset as usize..offset as usize + tuple_size]
-            .copy_from_slice(&tuple_data);
-        
-        // 6. Return the record id for this tuple
-        Ok(RecordId::new(self.page_id(), slot_id))
     }
 
     pub(crate) fn update_tuple_metadata(
