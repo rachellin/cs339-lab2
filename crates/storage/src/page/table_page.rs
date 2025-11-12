@@ -94,12 +94,16 @@ impl<T: Deref<Target = PageFrame>> TablePage<T> {
     }
 
     pub(crate) fn get_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
-todo!();
         // 1. check that the record id is valid
+        self.validate_record_id(rid)?;
         // 2. get the slot
-        self.slot_array()
+        let slot = &self.slot_array()[rid.slot_id() as usize];
         // 3. read the tuple  
+        let offset = slot.offset() as usize;
+        let size = slot.size_bytes() as usize;
+        let tuple_data = self.page_frame_handle.data()[offset..offset + size].to_vec();
         // 4. return the tuple 
+        Ok((slot.metadata, Tuple::new(tuple_data.into())))
     }
 
     fn get_next_tuple_offset(&mut self, tuple: &Tuple) -> Result<u16> {
