@@ -80,14 +80,15 @@ impl BufferPoolManager {
 
         // allocate a new page
         let page_id = self.disk_manager.lock()?.allocate_page(); // assign new page id
-        frame.set_page_id(page_id?);
+        let pid = page_id?;
+        frame.set_page_id(pid);
 
         // initialize the frame
         frame.reset(); // clear data and metadata
         frame.set_dirty(false);
 
         // insert the page into the page table
-        self.page_table.insert(page_id?, frame_id);
+        self.page_table.insert(pid, frame_id);
 
         // update the replacer
         self.replacer.pin(frame_id);
@@ -187,10 +188,12 @@ impl BufferPoolManager {
 
             // update replacer
             if frame.pin_count() == 0 {
-                self.replacer.set_evictable(&frame_id, true);
+                //self.replacer.set_evictable(&frame_id, true);
+                self.replacer.unpin(frame_id);
             } else {
                 // greater than zero
-                self.replacer.set_evictable(&frame_id, false);
+                //self.replacer.set_evictable(&frame_id, false);
+                self.replacer.pin(frame_id);
             }
         } else {
             // page not in memory
@@ -219,7 +222,7 @@ impl BufferPoolManager {
 
             // remove from page table and replacer
             self.page_table.remove(&page_id);
-            self.replacer.remove(&frame_id);
+            self.replacer.remove(frame_id);
 
             // reset the frame
             frame.reset();

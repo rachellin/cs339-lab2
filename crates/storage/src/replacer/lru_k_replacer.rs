@@ -24,7 +24,7 @@ impl LrukNode {
 
     /// Checks if the node has an infinite backward K-distance.
     fn has_inf_backward_k_dist(&self) -> bool {
-        self.history.len() < self.k;
+        self.history.len() < self.k
     }
 
     /// Gets the earliest recorded timestamp.

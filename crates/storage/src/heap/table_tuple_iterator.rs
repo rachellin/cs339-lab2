@@ -61,40 +61,38 @@ impl Iterator for TableTupleIterator {
             // create a table page from the page handle
             let table_page = TablePageRef::from(page_handle);
 
-            // get the next tuple offset 
-            match table_page.get_next_tuple_offset(self.current_slot) {
-                Ok(Some(rid)) => { // there is a tuple at this offset
-                    
-                    // Try to fetch the tuple at this RecordId
-                    match table_page.get_tuple(&rid) {
-                        Ok((metadata, tuple)) => {
-                            // advance to the next slot for the next iteration
-                            self.current_slot = rid.slot_id() + 1;
+            // Check if current slot is within the page's tuple count
+            if self.current_slot < table_page.tuple_count() {
+                // Create a RecordId for this slot
+                let rid = RecordId::new(self.current_page_id, self.current_slot);
+                
+                // Try to fetch the tuple at this RecordId
+                match table_page.get_tuple(&rid) {
+                    Ok((metadata, tuple)) => {
+                        // Advance to the next slot for the next iteration
+                        self.current_slot += 1;
 
-                            // return tuples that are not deleted 
-                            if !metadata.is_deleted() {
-                                return Some(Ok((rid, tuple))); // return the tuple
-                            } else {
-                                continue; // skip deleted tuples 
-                            }
-                        }
-                        Err(e) => return Some(Err(e)),
-                    }
-                }
-                Ok(None) => { // no more tuples in this page 
-                    
-                    // move to the next page
-                    match table_page.next_page_id() {
-                        Some(next_page_id) => {
-                            self.current_page_id = next_page_id;
-                            self.current_slot = 0;
-                        }
-                        None => { // reached end of table 
-                            self.current_page_id = INVALID_PAGE_ID;
+                        // Return tuples that are not deleted 
+                        if !metadata.is_deleted() {
+                            return Some(Ok((rid.into(), tuple)));
+                        } else {
+                            continue; // Skip deleted tuples 
                         }
                     }
+                    Err(e) => return Some(Err(e)),
                 }
-                Err(e) => return Some(Err(e)),
+            } else {
+                // No more tuples in this page, move to the next page
+                let next_page_id = table_page.next_page_id();
+                
+                if next_page_id != INVALID_PAGE_ID {
+                    self.current_page_id = next_page_id;
+                    self.current_slot = 0;
+                } else {
+                    // Reached end of table 
+                    self.current_page_id = INVALID_PAGE_ID;
+                    return None;
+                }
             }
         }
     }

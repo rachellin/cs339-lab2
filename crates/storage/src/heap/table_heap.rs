@@ -24,7 +24,8 @@ impl TableHeap {
     /// Create a new table heap. A new root page is allocated from the buffer pool.
     pub fn new(name: &str, bpm: Arc<RwLock<BufferPoolManager>>) -> TableHeap {
         // allocate a new page for the table heap
-        let page_handle = BufferPoolManager::create_page_handle(&bpm).unwrap();
+        let bpm_clone = bpm.clone();
+        let page_handle = BufferPoolManager::create_page_handle(&bpm_clone).unwrap();
 
         // initialize the page header
         let mut table_page = TablePageMut::from(page_handle);
@@ -45,7 +46,7 @@ impl TableHeap {
         //  get the page from the buffer pool
         let page_handle = BufferPoolManager::fetch_page_handle(&self.bpm, rid.page_id())?;
 
-        // get the tuple from the page using TablePage 
+        // get the tuple from the page using TablePage
         let table_page = TablePageRef::from(page_handle);
         let (metadata, tuple) = table_page.get_tuple(rid)?;
 
@@ -57,16 +58,15 @@ impl TableHeap {
     pub fn delete_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
         // 1. get the page from the buffer pool
         let page_handle = BufferPoolManager::fetch_page_mut_handle(&self.bpm, rid.page_id())?;
-        
+
         // 2. get the tuple from the page using TablePage
         let mut table_page = TablePageMut::from(page_handle);
-        
-        // 3. delete tuple 
+
+        // 3. delete tuple
         let (metadata, tuple) = table_page.delete_tuple(rid)?;
-        
+
         // 4. return tuple and its metadata
         Ok((metadata, tuple))
-        
     }
 
     /// Insert a tuple into the table heap.
