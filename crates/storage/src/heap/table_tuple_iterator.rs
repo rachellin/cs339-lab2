@@ -133,18 +133,28 @@ impl Iterator for TableTupleIterator {
                 Err(Error::OutOfBounds) => {
                     // No tuple at this slot → likely end of page.
                     // Move to the next page.
-                    match table_page.next_page_id() {
-                        Some(next_page_id) => {
-                            self.current_page_id = next_page_id;
-                            self.current_slot = 0;
-                            continue;
-                        }
-                        None => {
-                            // reached end of table
-                            self.current_page_id = INVALID_PAGE_ID;
-                            return None;
-                        }
+                    // match table_page.next_page_id() {
+                    //     Some(next_page_id) => {
+                    //         self.current_page_id = next_page_id;
+                    //         self.current_slot = 0;
+                    //         continue;
+                    //     }
+                    //     None => {
+                    //         // reached end of table
+                    //         self.current_page_id = INVALID_PAGE_ID;
+                    //         return None;
+                    //     }
+                    // }
+                    let next_page_id = table_page.next_page_id();
+                    if next_page_id == INVALID_PAGE_ID {
+                        self.current_page_id = INVALID_PAGE_ID;
+                        return None;
+                    } else {
+                        self.current_page_id = next_page_id;
+                        self.current_slot = 0;
+                        continue;
                     }
+
                 }
                 Err(e) => {
                     // any other error should be propagated

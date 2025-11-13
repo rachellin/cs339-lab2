@@ -68,14 +68,12 @@ impl TableHeap {
         if metadata.is_deleted() {
             return Ok((metadata, tuple));
         }
-        
-        metadata.set_deleted(true); /
+
+        metadata.set_deleted(true);
         table_page.update_tuple_metadata(rid, metadata.clone())?;
 
         // 4. return tuple and its metadata
         Ok((metadata, tuple))
-
-        
     }
 
     /// Insert a tuple into the table heap.

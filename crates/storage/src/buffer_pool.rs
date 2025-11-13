@@ -202,18 +202,19 @@ impl BufferPoolManager {
     pub(crate) fn delete_page(&mut self, page_id: PageId) -> Result<()> {
         // check if page is in memory
         if let Some(&frame_id) = self.page_table.get(&page_id) {
-            let frame = &mut self.frames[frame_id];
-
-            // can't delete if the page is pinned
-            if frame.pin_count() > 0 {
-                return Err(Error::BufferPoolError(format!(
-                    "Page {:?} is pinned and cannot be deleted",
-                    page_id
-                )));
+            // Check if the page is pinned (before taking a mutable borrow)
+            {
+                let frame = &self.frames[frame_id];
+                if frame.pin_count() > 0 {
+                    return Err(Error::BufferPoolError(format!(
+                        "Page {:?} is pinned and cannot be deleted",
+                        page_id
+                    )));
+                }
             }
 
-            // if dirty, flush to disk
-            if frame.is_dirty() {
+            // if dirty, flush to disk (borrow has been dropped)
+            if self.frames[frame_id].is_dirty() {
                 self.flush_page(&page_id)?;
             }
 
@@ -222,7 +223,7 @@ impl BufferPoolManager {
             self.replacer.remove(frame_id);
 
             // reset the frame
-            frame.reset();
+            self.frames[frame_id].reset();
 
             // add frame back to free list
             self.free_list.push_back(frame_id);

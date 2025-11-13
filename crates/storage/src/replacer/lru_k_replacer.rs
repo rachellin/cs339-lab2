@@ -188,9 +188,6 @@ impl Replacer for LrukReplacer {
         }
     }
 
-    fn set_evictable(&mut self, frame_id: FrameId, evictable: bool) {
-        self.set_evictable(frame_id, evictable);
-    }
 
     /// Returns the number of evictable frames.
     fn evictable_count(&self) -> usize {
