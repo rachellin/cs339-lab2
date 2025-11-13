@@ -201,34 +201,66 @@ impl BufferPoolManager {
     /// Deletes a page from the buffer pool and disk.
     pub(crate) fn delete_page(&mut self, page_id: PageId) -> Result<()> {
         // check if page is in memory
+        // if let Some(&frame_id) = self.page_table.get(&page_id) {
+        //     let frame = &mut self.frames[frame_id];
+
+        //     // can't delete if the page is pinned
+        //     if frame.pin_count() > 0 {
+        //         return Err(Error::BufferPoolError(format!(
+        //             "Page {:?} is pinned and cannot be deleted",
+        //             page_id
+        //         )));
+        //     }
+
+        //     // if dirty, flush to disk
+        //     if frame.is_dirty() {
+        //         self.flush_page(&page_id)?;
+        //     }
+
+        //     // remove from page table and replacer
+        //     self.page_table.remove(&page_id);
+        //     self.replacer.remove(frame_id);
+
+        //     // reset the frame
+        //     frame.reset();
+
+        //     // add frame back to free list
+        //     self.free_list.push_back(frame_id);
+        // }
+        // // delete the page from disk
+        // let mut disk = self.disk_manager.lock()?;
+        // disk.deallocate_page(page_id)?;
+
+        // Ok(())
+        // check if page is in memory
         if let Some(&frame_id) = self.page_table.get(&page_id) {
-            // Check if the page is pinned (before taking a mutable borrow)
+            // --- check pin count in its own scope ---
             {
                 let frame = &self.frames[frame_id];
+                // can't delete if the page is pinned
                 if frame.pin_count() > 0 {
                     return Err(Error::BufferPoolError(format!(
                         "Page {:?} is pinned and cannot be deleted",
                         page_id
                     )));
                 }
-            }
+            } // borrow of `frame` ends here
 
-            // if dirty, flush to disk (borrow has been dropped)
+            // --- check dirty status safely ---
             if self.frames[frame_id].is_dirty() {
-                self.flush_page(&page_id)?;
+                self.flush_page(&page_id)?; // now safe — no overlapping mutable borrows
             }
 
             // remove from page table and replacer
             self.page_table.remove(&page_id);
             self.replacer.remove(frame_id);
 
-            // reset the frame
+            // reset the frame and recycle it
             self.frames[frame_id].reset();
-
-            // add frame back to free list
             self.free_list.push_back(frame_id);
         }
-        // delete the page from disk
+
+        // delete the page from disk (safe to do outside the frame borrow)
         let mut disk = self.disk_manager.lock()?;
         disk.deallocate_page(page_id)?;
 
