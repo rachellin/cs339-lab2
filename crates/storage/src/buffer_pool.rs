@@ -104,7 +104,6 @@ impl BufferPoolManager {
         // if yes: get the frame id
         if let Some(&frame_id) = self.page_table.get(&page_id) {
             let frame = &mut self.frames[frame_id];
-            frame.pin(); // pin the frame
             self.replacer.record_access(frame_id); // update replacer
             self.replacer.pin(frame_id);
 
@@ -121,7 +120,6 @@ impl BufferPoolManager {
             // set frame metadata
             frame.set_page_id(page_id);
             frame.set_dirty(false);
-            frame.pin();
 
             // update page table and replacer
             self.page_table.insert(page_id, frame_id);
@@ -139,7 +137,7 @@ impl BufferPoolManager {
         // if yes: get the frame id
         if let Some(&frame_id) = self.page_table.get(&page_id) {
             let frame = &mut self.frames[frame_id];
-            frame.pin(); // pin the frame
+            self.replacer.pin(frame_id);
             self.replacer.record_access(frame_id); // update replacer
 
             // return immutable reference to the frame
@@ -156,7 +154,6 @@ impl BufferPoolManager {
             // set frame metadata
             frame.set_page_id(page_id);
             frame.set_dirty(false);
-            frame.pin();
 
             // update page table and replacer
             self.page_table.insert(page_id, frame_id);

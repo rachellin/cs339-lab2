@@ -63,10 +63,19 @@ impl TableHeap {
         let mut table_page = TablePageMut::from(page_handle);
 
         // 3. delete tuple
-        let (metadata, tuple) = table_page.delete_tuple(rid)?;
+        let (mut metadata, tuple) = table_page.get_tuple(rid)?;
+
+        if metadata.is_deleted() {
+            return Ok((metadata, tuple));
+        }
+        
+        metadata.set_deleted(true); /
+        table_page.update_tuple_metadata(rid, metadata.clone())?;
 
         // 4. return tuple and its metadata
         Ok((metadata, tuple))
+
+        
     }
 
     /// Insert a tuple into the table heap.
