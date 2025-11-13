@@ -47,54 +47,110 @@ impl Iterator for TableTupleIterator {
     /// doesn't have more tuples to emit and that the iterator should move to the next page.)
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // stop iterating when we reach the end of the table 
+        //     // stop iterating when we reach the end of the table
+        //     if self.current_page_id == INVALID_PAGE_ID {
+        //         return None;
+        //     }
+
+        //     // get the current page from the buffer pool
+        //     let page_handle =
+        //         match BufferPoolManager::fetch_page_handle(&self.bpm, self.current_page_id) {
+        //             Ok(handle) => handle,          // successfully fetched the page
+        //             Err(e) => return Some(Err(e)), // error
+        //         };
+
+        //     // create a table page from the page handle
+        //     let table_page = TablePageRef::from(page_handle);
+
+        //     // get the next tuple offset
+        //     match table_page.get_next_tuple_offset(self.current_slot) {
+        //         Ok(Some(rid)) => {
+        //             // there is a tuple at this offset
+
+        //             // Try to fetch the tuple at this RecordId
+        //             match table_page.get_tuple(&rid) {
+        //                 Ok((metadata, tuple)) => {
+        //                     // advance to the next slot for the next iteration
+        //                     self.current_slot = rid.slot_id() + 1;
+
+        //                     // return tuples that are not deleted
+        //                     if !metadata.is_deleted() {
+        //                         //return Some(Ok((rid, tuple)));
+        //                         return Some(Ok((rid.into(), tuple))); // return the tuple
+        //                     } else {
+        //                         continue; // skip deleted tuples
+        //                     }
+        //                 }
+        //                 Err(e) => return Some(Err(e)),
+        //             }
+        //         }
+        //         Ok(None) => {
+        //             // no more tuples in this page
+
+        //             // move to the next page
+        //             match table_page.next_page_id() {
+        //                 Some(next_page_id) => {
+        //                     self.current_page_id = next_page_id;
+        //                     self.current_slot = 0;
+        //                 }
+        //                 None => {
+        //                     // reached end of table
+        //                     self.current_page_id = INVALID_PAGE_ID;
+        //                 }
+        //             }
+        //         }
+        //         Err(e) => return Some(Err(e)),
+        //     }
+        // }
+            // stop iterating when we reach the end of the table
             if self.current_page_id == INVALID_PAGE_ID {
                 return None;
             }
 
-            // get the current page from the buffer pool 
-            let page_handle = match BufferPoolManager::fetch_page_handle(&self.bpm, self.current_page_id) {
-                Ok(handle) => handle, // successfully fetched the page
-                Err(e) => return Some(Err(e)), // error 
-            };
+            // get the current page from the buffer pool
+            let page_handle =
+                match BufferPoolManager::fetch_page_handle(&self.bpm, self.current_page_id) {
+                    Ok(handle) => handle,
+                    Err(e) => return Some(Err(e)),
+                };
 
             // create a table page from the page handle
             let table_page = TablePageRef::from(page_handle);
 
-            // Check if current slot is within the page's tuple count
-            if self.current_slot < table_page.tuple_count() {
-                // Create a RecordId for this slot
-                let rid = RecordId::new(self.current_page_id, self.current_slot);
-                
-                // Try to fetch the tuple at this RecordId
-                match table_page.get_tuple(&rid) {
-                    Ok((metadata, tuple)) => {
-                        // Advance to the next slot for the next iteration
-                        self.current_slot += 1;
+            // Try to fetch tuple at the current slot
+            let rid = RecordId::new(self.current_page_id, self.current_slot);
 
-                        // Return tuples that are not deleted 
-                        if !metadata.is_deleted() {
-                            return Some(Ok((rid.into(), tuple)));
-                        } else {
-                            continue; // Skip deleted tuples 
+            match table_page.get_tuple(&rid) {
+                Ok((metadata, tuple)) => {
+                    self.current_slot += 1; // move to next slot
+
+                    if !metadata.is_deleted() {
+                        return Some(Ok((rid.into(), tuple)));
+                    }
+                    // if deleted, continue to next slot
+                    continue;
+                }
+                Err(Error::OutOfBounds) => {
+                    // No tuple at this slot → likely end of page.
+                    // Move to the next page.
+                    match table_page.next_page_id() {
+                        Some(next_page_id) => {
+                            self.current_page_id = next_page_id;
+                            self.current_slot = 0;
+                            continue;
+                        }
+                        None => {
+                            // reached end of table
+                            self.current_page_id = INVALID_PAGE_ID;
+                            return None;
                         }
                     }
-                    Err(e) => return Some(Err(e)),
                 }
-            } else {
-                // No more tuples in this page, move to the next page
-                let next_page_id = table_page.next_page_id();
-                
-                if next_page_id != INVALID_PAGE_ID {
-                    self.current_page_id = next_page_id;
-                    self.current_slot = 0;
-                } else {
-                    // Reached end of table 
-                    self.current_page_id = INVALID_PAGE_ID;
-                    return None;
+                Err(e) => {
+                    // any other error should be propagated
+                    return Some(Err(e));
                 }
             }
-        }
     }
 }
 
@@ -106,8 +162,7 @@ mod tests {
 
     use crate::{
         buffer_pool::BufferPoolManager, disk::disk_manager::DiskManager,
-        heap::table_heap::TableHeap, replacer::lru_k_replacer::LrukReplacer,
-        Result,
+        heap::table_heap::TableHeap, replacer::lru_k_replacer::LrukReplacer, Result,
     };
 
     use super::TableTupleIterator;
@@ -149,5 +204,4 @@ mod tests {
 
         Ok(())
     }
-
 }
