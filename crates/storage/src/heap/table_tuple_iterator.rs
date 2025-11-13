@@ -46,7 +46,57 @@ impl Iterator for TableTupleIterator {
     /// (The exception to this is an out-of-bounds error, which might signal that the current page
     /// doesn't have more tuples to emit and that the iterator should move to the next page.)
     fn next(&mut self) -> Option<Self::Item> {
-todo!();
+        loop {
+            // stop iterating when we reach the end of the table 
+            if self.current_page_id == INVALID_PAGE_ID {
+                return None;
+            }
+
+            // get the current page from the buffer pool 
+            let page_handle = match BufferPoolManager::fetch_page_handle(&self.bpm, self.current_page_id) {
+                Ok(handle) => handle, // successfully fetched the page
+                Err(e) => return Some(Err(e)), // error 
+            };
+
+            // create a table page from the page handle
+            let table_page = TablePageRef::from(page_handle);
+
+            // get the next tuple offset 
+            match table_page.get_next_tuple_offset(self.current_slot) {
+                Ok(Some(rid)) => { // there is a tuple at this offset
+                    
+                    // Try to fetch the tuple at this RecordId
+                    match table_page.get_tuple(&rid) {
+                        Ok((metadata, tuple)) => {
+                            // advance to the next slot for the next iteration
+                            self.current_slot = rid.slot_id() + 1;
+
+                            // return tuples that are not deleted 
+                            if !metadata.is_deleted() {
+                                return Some(Ok((rid, tuple))); // return the tuple
+                            } else {
+                                continue; // skip deleted tuples 
+                            }
+                        }
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+                Ok(None) => { // no more tuples in this page 
+                    
+                    // move to the next page
+                    match table_page.next_page_id() {
+                        Some(next_page_id) => {
+                            self.current_page_id = next_page_id;
+                            self.current_slot = 0;
+                        }
+                        None => { // reached end of table 
+                            self.current_page_id = INVALID_PAGE_ID;
+                        }
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
     }
 }
 

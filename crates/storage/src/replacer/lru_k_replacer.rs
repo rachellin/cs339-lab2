@@ -24,7 +24,7 @@ impl LrukNode {
 
     /// Checks if the node has an infinite backward K-distance.
     fn has_inf_backward_k_dist(&self) -> bool {
-todo!();
+        self.history.len() < self.k;
     }
 
     /// Gets the earliest recorded timestamp.
@@ -34,7 +34,16 @@ todo!();
 
     /// Calculates the backward K-distance of this node.
     fn get_backwards_k_distance(&self, current_timestamp: u64) -> u64 {
-todo!();
+        // 1. check if node has been acessed less than k times aka has infinite backward K-distance
+        if self.has_inf_backward_k_dist() {
+            u64::MAX // encode infinity
+        } else {
+            // if the node has been accessed at least k times
+            // calculate the difference between the current timestamp and the last timestamp
+            // large difference ==> last access was a long time ago → candidate for eviction
+            // small difference ==> last access was recent → not a candidate for eviction
+            current_timestamp - self.history.front().unwrap()
+        }
     }
 
     /// Inserts a new access timestamp, maintaining the last K timestamps.
@@ -78,28 +87,109 @@ impl LrukReplacer {
 impl Replacer for LrukReplacer {
     /// Records access to a frame and updates its history.
     fn record_access(&mut self, frame_id: FrameId) {
-todo!();
+        // 1. get the current timestamp
+        let current_ts = self.advance_timestamp();
+
+        // 2. get the node for this frame id
+        let node = self
+            .node_store
+            .entry(frame_id)
+            .or_insert_with(|| LrukNode::new(frame_id, self.k));
+
+        // 3. update the timestamp history
+        node.insert_history_timestamp(current_ts);
     }
 
     /// Pins a frame, making it non-evictable.
     fn pin(&mut self, frame_id: FrameId) {
-todo!();
+        // do not evict a frame that is in active use
+        // 1. get the node for this frame id
+        let node = self
+            .node_store
+            .entry(frame_id)
+            .or_insert_with(|| LrukNode::new(frame_id, self.k));
+        // 2. update the evictable status
+        if let Some(node) = self.node_store.get_mut(&frame_id) {
+            // first check that the frame is in the replacer
+            if node.is_evictable {
+                node.is_evictable = false; // make non-evictable
+                self.evictable_size -= 1; // update number of evictable frames
+            }
+        }
     }
 
     /// Unpins a frame, making it evictable.
     fn unpin(&mut self, frame_id: FrameId) {
-todo!();
+        // 1. get the node for this frame id
+        let node = self
+            .node_store
+            .entry(frame_id)
+            .or_insert_with(|| LrukNode::new(frame_id, self.k));
+        // 2. update the evictable status
+        if !node.is_evictable {
+            node.is_evictable = true; // make evictable
+            self.evictable_size += 1; // update number of evictable frames
+        }
     }
 
     /// Evicts the frame with the largest backward k-distance.
-
     fn evict(&mut self) -> Option<FrameId> {
-todo!();
+        // 1. handle the case where there are no evictable frames
+        if self.evictable_size == 0 {
+            return None;
+        }
+
+        let current_ts = self.current_timestamp;
+        let mut candidate: Option<(FrameId, u64, u64)> = None;
+
+        // 2. iterate over all the frames in the replacer
+        for node in self.node_store.values() {
+            // skip frames that are not evictable
+            if !node.is_evictable {
+                continue;
+            }
+
+            // 3. calculate the backward k-distance and oldest timestamp for each frame
+            let dist = node.get_backwards_k_distance(current_ts);
+            let earliest = node.get_earliest_timestamp();
+
+            // choose the best candidate
+            match &candidate {
+                None => candidate = Some((node.frame_id, dist, earliest)),
+                Some((_, best_dist, best_ts)) => {
+                    if dist > *best_dist // this frame's k-distance is bigger -> less recently used -> better eviction candidate
+                        || (dist == *best_dist && earliest < *best_ts)
+                    // k-distances are the same -> choose the one with the older timestamp
+                    {
+                        candidate = Some((node.frame_id, dist, earliest));
+                    }
+                }
+            }
+        }
+
+        // 4. evict the candidate frame
+        if let Some((frame_id, _, _)) = candidate {
+            self.node_store.remove(&frame_id); // remove
+            self.evictable_size -= 1; // update number of evictable frames
+            Some(frame_id) // return evicted frame id so the buffer pool knows which one to evict
+        } else {
+            None
+        }
     }
 
     /// Removes a frame from the replacer if it is evictable.
     fn remove(&mut self, frame_id: FrameId) {
-todo!();
+        if let Some(node) = self.node_store.get(&frame_id) {
+            // first check that the frame is in the replacer
+            if node.is_evictable {
+                self.node_store.remove(&frame_id); // remove the frame
+                self.evictable_size -= 1; // update number of evictable frames
+            }
+        }
+    }
+
+    fn set_evictable(&mut self, frame_id: FrameId, evictable: bool) {
+        self.set_evictable(frame_id, evictable);
     }
 
     /// Returns the number of evictable frames.
@@ -451,5 +541,4 @@ mod tests {
             assert_eq!(0, lru_replacer.evictable_count());
         }
     }
-
 }

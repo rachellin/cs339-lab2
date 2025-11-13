@@ -23,17 +23,50 @@ pub struct TableHeap {
 impl TableHeap {
     /// Create a new table heap. A new root page is allocated from the buffer pool.
     pub fn new(name: &str, bpm: Arc<RwLock<BufferPoolManager>>) -> TableHeap {
-todo!();
+        // allocate a new page for the table heap
+        let page_handle = BufferPoolManager::create_page_handle(&bpm).unwrap();
+
+        // initialize the page header
+        let mut table_page = TablePageMut::from(page_handle);
+        table_page.init_header(INVALID_PAGE_ID);
+
+        // create the table heap
+        TableHeap {
+            table_name: name.to_string(),
+            page_cnt: 1,
+            bpm,
+            first_page_id: table_page.page_id(),
+            last_page_id: table_page.page_id(),
+        }
     }
 
     /// Retrieve a tuple given its record id.
     pub fn get_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
-todo!();
+        //  get the page from the buffer pool
+        let page_handle = BufferPoolManager::fetch_page_handle(&self.bpm, rid.page_id())?;
+
+        // get the tuple from the page using TablePage 
+        let table_page = TablePageRef::from(page_handle);
+        let (metadata, tuple) = table_page.get_tuple(rid)?;
+
+        // return tuple and its metadata
+        Ok((metadata, tuple))
     }
 
     /// Delete a tuple given its record id, returning the deleted tuple (and its metadata).
     pub fn delete_tuple(&self, rid: &RecordId) -> Result<(TupleMetadata, Tuple)> {
-todo!();
+        // 1. get the page from the buffer pool
+        let page_handle = BufferPoolManager::fetch_page_mut_handle(&self.bpm, rid.page_id())?;
+        
+        // 2. get the tuple from the page using TablePage
+        let mut table_page = TablePageMut::from(page_handle);
+        
+        // 3. delete tuple 
+        let (metadata, tuple) = table_page.delete_tuple(rid)?;
+        
+        // 4. return tuple and its metadata
+        Ok((metadata, tuple))
+        
     }
 
     /// Insert a tuple into the table heap.
@@ -81,7 +114,7 @@ todo!();
     }
 
     pub(crate) fn first_page_id(&self) -> PageId {
-todo!();
+        self.first_page_id
     }
 }
 

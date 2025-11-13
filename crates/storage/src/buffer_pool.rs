@@ -74,32 +74,188 @@ impl BufferPoolManager {
 
     /// Allocates a new page and loads it into a free frame.
     fn create_page(&mut self) -> Result<&mut PageFrame> {
-todo!();
+        // get a free frame
+        let frame_id = self.get_free_frame()?;
+        let frame = &mut self.frames[frame_id];
+
+        // allocate a new page
+        let page_id = self.disk_manager.lock()?.allocate_page(); // assign new page id
+        frame.set_page_id(page_id?);
+
+        // initialize the frame
+        frame.reset(); // clear data and metadata
+        frame.set_dirty(false);
+
+        // insert the page into the page table
+        self.page_table.insert(page_id?, frame_id);
+
+        // update the replacer
+        self.replacer.pin(frame_id);
+        self.replacer.record_access(frame_id);
+
+        // return the frame
+        Ok(frame)
     }
 
     /// Fetches a mutable reference to a page, loading it from disk if necessary.
     fn fetch_page_mut(&mut self, page_id: PageId) -> Result<&mut PageFrame> {
-todo!();
+        // check if the page is already in memory
+        // if yes: get the frame id
+        if let Some(&frame_id) = self.page_table.get(&page_id) {
+            let frame = &mut self.frames[frame_id];
+            frame.pin(); // pin the frame
+            self.replacer.record_access(frame_id); // update replacer
+            self.replacer.pin(frame_id);
+
+            return Ok(frame); // return mutable reference to the frame
+        } else {
+            // if no: get a free frame
+            let frame_id = self.get_free_frame()?;
+            let frame = &mut self.frames[frame_id];
+
+            // load page from disk
+            let mut disk = self.disk_manager.lock()?;
+            disk.read(page_id)?;
+
+            // set frame metadata
+            frame.set_page_id(page_id);
+            frame.set_dirty(false);
+            frame.pin();
+
+            // update page table and replacer
+            self.page_table.insert(page_id, frame_id);
+            self.replacer.record_access(frame_id);
+            self.replacer.pin(frame_id);
+
+            // return mutable reference to the frame
+            Ok(frame)
+        }
     }
 
     /// Fetches an immutable reference to a page.
     fn fetch_page(&mut self, page_id: PageId) -> Result<&PageFrame> {
-todo!();
+        // check if the page is already i nmemory
+        // if yes: get the frame id
+        if let Some(&frame_id) = self.page_table.get(&page_id) {
+            let frame = &mut self.frames[frame_id];
+            frame.pin(); // pin the frame
+            self.replacer.record_access(frame_id); // update replacer
+
+            // return immutable reference to the frame
+            return Ok(&*frame);
+        } else {
+            // if no: get a free frame
+            let frame_id = self.get_free_frame()?;
+            let frame = &mut self.frames[frame_id];
+
+            // load page from disk
+            let mut disk = self.disk_manager.lock()?;
+            disk.read(page_id)?;
+
+            // set frame metadata
+            frame.set_page_id(page_id);
+            frame.set_dirty(false);
+            frame.pin();
+
+            // update page table and replacer
+            self.page_table.insert(page_id, frame_id);
+            self.replacer.record_access(frame_id);
+
+            // return immutable reference to the frame
+            return Ok(&*frame);
+        }
     }
 
     /// Unpins a page, allowing it to be evicted if necessary.
     pub(crate) fn unpin_page(&mut self, page_id: PageId, is_dirty: bool) {
-todo!();
+        if let Some(&frame_id) = self.page_table.get(&page_id) {
+            // check if page is in memory
+            let frame = &mut self.frames[frame_id];
+
+            // decrement pin count--must stay above zero
+            let current_pin = frame.pin_count();
+            if current_pin > 0 {
+                self.replacer.unpin(frame_id);
+            } else {
+                panic!("Attempted to unpin a page with pin_count = 0");
+            }
+
+            // mark frame as dirty if necessary
+            if is_dirty {
+                frame.set_dirty(true);
+            }
+
+            // update replacer
+            if frame.pin_count() == 0 {
+                self.replacer.set_evictable(&frame_id, true);
+            } else {
+                // greater than zero
+                self.replacer.set_evictable(&frame_id, false);
+            }
+        } else {
+            // page not in memory
+            panic!("Attempted to unpin a page not in buffer pool");
+        }
     }
 
     /// Deletes a page from the buffer pool and disk.
     pub(crate) fn delete_page(&mut self, page_id: PageId) -> Result<()> {
-todo!();
+        // check if page is in memory
+        if let Some(&frame_id) = self.page_table.get(&page_id) {
+            let frame = &mut self.frames[frame_id];
+
+            // can't delete if the page is pinned
+            if frame.pin_count() > 0 {
+                return Err(Error::BufferPoolError(format!(
+                    "Page {:?} is pinned and cannot be deleted",
+                    page_id
+                )));
+            }
+
+            // if dirty, flush to disk
+            if frame.is_dirty() {
+                self.flush_page(&page_id)?;
+            }
+
+            // remove from page table and replacer
+            self.page_table.remove(&page_id);
+            self.replacer.remove(&frame_id);
+
+            // reset the frame
+            frame.reset();
+
+            // add frame back to free list
+            self.free_list.push_back(frame_id);
+        }
+        // delete the page from disk
+        let mut disk = self.disk_manager.lock()?;
+        disk.deallocate_page(page_id)?;
+
+        Ok(())
     }
 
     /// Flushes a specific page to disk.
     pub(crate) fn flush_page(&mut self, page_id: &PageId) -> Result<()> {
-todo!();
+        // check if page is in memory
+        if let Some(&frame_id) = self.page_table.get(page_id) {
+            let frame = &mut self.frames[frame_id];
+
+            // if the frame is dirty, write it to disk
+            if frame.is_dirty() {
+                let mut disk = self.disk_manager.lock()?; // lock the disk manager
+                disk.write(*page_id, frame.data())?; // write to disk
+                frame.set_dirty(false); // mark the frame as no longer dirty
+            }
+
+            // return success
+            Ok(())
+        } else {
+            // page not in memory
+            Err(Error::BufferPoolError(format!(
+                "Page {:?} not found in buffer pool",
+                page_id
+            )))
+        }
     }
 
     /// Returns the total number of frames in the buffer pool.
@@ -672,7 +828,6 @@ mod tests {
             "Page 1 should be unpinned after dropping the handle"
         );
     }
-
 
     #[test]
     #[serial]
@@ -1667,5 +1822,4 @@ mod tests {
             }
         }
     }
-
 }

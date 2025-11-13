@@ -203,13 +203,45 @@ impl<T: DerefMut<Target = PageFrame> + Deref<Target = PageFrame>> TablePage<T> {
         let tuple_size = tuple.data().len();
         let tuple_count = self.header().tuple_cnt as usize;
         let offset = self.get_next_tuple_offset(tuple)? as usize;
+        
         // 2. check that the tuple fits in the page
         let used_space = TABLE_PAGE_HEADER_SIZE + (tuple_count + 1) * TUPLE_INFO_SIZE;
         if offset < used_space {
-            return Err(Error::OutOfMemory("Not enough space for tuple".into()));
+            return Err(Error::OutOfBounds);
         }
+        
         // 3. write the tuple to the page
-        // 4. 
+        let start = offset;
+        let end = offset + tuple_size;
+        self.page_frame_handle.data_mut()[start..end].copy_from_slice(&tuple.data());
+
+        // 4. add a new slot
+        let new_info = TupleInfo {
+            offset: offset as u16,
+            size_bytes: tuple_size as u16,
+            metadata: *meta,
+        };
+        
+        // 5. update slot array
+        // get metadata section of the page 
+        let slots_mut = self.slot_array_mut();
+        // if there is space for the new slot, add it 
+        if slots_mut.len() > tuple_count {
+            slots_mut[tuple_count] = new_info;
+        // else, add the new slot to the end of the page
+        } else {
+            // calculate the start and end of the new slot
+            let start_bytes = TABLE_PAGE_HEADER_SIZE + tuple_count * TUPLE_INFO_SIZE;
+            let end_bytes = start_bytes + TUPLE_INFO_SIZE;
+            let bytes = &mut self.page_frame_handle.data_mut()[start_bytes..end_bytes];
+            bytes.copy_from_slice(bytemuck::bytes_of(&new_info));
+        }
+
+        // 6. update header
+        self.header_mut().tuple_cnt += 1;
+
+        // 7. return the record id
+        Ok(RecordId::new(self.page_id(), tuple_count as u32))
 
         
     }
@@ -219,7 +251,21 @@ impl<T: DerefMut<Target = PageFrame> + Deref<Target = PageFrame>> TablePage<T> {
         rid: &RecordId,
         metadata: TupleMetadata,
     ) -> Result<()> {
-todo!();
+        
+        // 1. validate record id
+        self.validate_record_id(rid)?;
+        
+        // 2. get mutable access to slot array
+        let slots_mut = self.slot_array_mut();
+        
+        // 3. find the correct slot for this metadata
+        let slot = &mut slots_mut[rid.slot_id() as usize];
+        
+        // 4. update the metadata
+        slot.metadata = metadata;
+        
+        // 5. return ok if successful
+        Ok(())
     }
 }
 
